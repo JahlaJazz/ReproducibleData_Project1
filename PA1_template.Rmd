@@ -1,0 +1,140 @@
+---
+title: "Reproducible Reporting Course Project 1"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Overview of the course project
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+The variables included in this dataset are:
+- steps: Number of steps taking in a 5-minute interval (missing values are coded as NA)
+- date: The date on which the measurement was taken in YYYY-MM-DD format
+- interval: Identifier for the 5-minute interval in which measurement was taken
+
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset.
+
+## Load the required libraries
+```{r libs}
+library(dplyr)
+library(knitr)
+library(lubridate)
+library(ggplot2)
+```
+
+## Loading the data
+The input file should be placed in the working directory. The following reads the data in.
+
+```{r getdata}
+activitydata <- read.csv("Activity.csv", header = T, sep = ",", colClasses = c("integer", "character", "integer"))
+```
+
+## Structure, records and summary of the raw data
+```{r datastruc}
+str(activitydata)
+
+head(activitydata[1:10,])
+
+summary(activitydata)
+```
+
+## Tidy data set  
+Adjustments are required for the date and interval fields when the size of the interval field
+is greater than the number of minutes( ie, 1440 ) in a day. This will result in three new
+variable. The first is the mult field = integer(interval/1440), the second is the dateadj field
+which equals the date + mult and the third is the interval1 filed which equals interval-1440*mult.
+
+```{r tidydata1}
+activitydata$mult <- as.integer(activitydata$interval/1440)*ifelse(activitydata$interval>1440,1,0)
+activitydata$dateadj <- date(activitydata$date)+activitydata$mult
+activitydata$interval1 <- activitydata$interval - (activitydata$mult*1440)
+activitytidydata <- activitydata[,c(1,5,6)]
+names(activitytidydata) <- names(activitydata)[1:3]
+```
+
+## Structure, records and summary of the tidy data
+```{r tidydatastruc}
+str(activitytidydata)
+
+head(activitytidydata[1:10,])
+
+summary(activitytidydata)
+```
+
+
+## Determine the total number of steps taken per day
+```{r totalsteps}
+totalsteps <- activitytidydata %>% filter(!is.na(steps)) %>% group_by(date) %>% summarize(steps = sum(steps)) %>% print
+```
+
+## Histogram of the frequency of various step bands
+Distribution of step bands, along with the average and median number of steps per day 
+```{r stepband}
+hist(totalsteps$steps, main = "Distribution of Total Steps per Day", xlab = "Categories of Steps Bands", ylab = "Frequency of Step Band", col = "green")
+avgstep <- round(mean(totalsteps$steps, na.rm = T),0)
+medianstep <- round(median(totalsteps$steps, na.rm = T),0)
+```
+The average number of steps per day is `r avgstep` and the median number of steps per day is `r medianstep`.
+
+## Average Daily Activity Patterns
+ 1.Make a time series plot of the 5-minute interval (x-axis) and the average number of 
+   steps taken, averaged across all days (y-axis)
+   
+ 2.Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of     steps?
+```{r avgsteps}
+intervals <- activitytidydata %>% filter(!is.na(steps)) %>% group_by(interval) %>% summarize(steps = round(mean(steps),0)) %>% print 
+ggplot(data = intervals, aes(x = interval, y=steps))+geom_line(color="blue") +xlab("5-minute intervals") + ylab("Average number of steps") 
+inter <- sum(intervals[which.max(intervals$steps),][1,1])
+numstep <- sum(round(intervals[which.max(intervals$steps),][1,2],0))
+```
+The 5-minute interval with the largest number of steps in `r inter` and the number of steps associated
+with this interval is `r numstep`.
+
+## Imputed missing values
+```{r miss}
+missing <- which(is.na(activitytidydata$steps))
+filled <- which(!is.na(activitytidydata$steps))
+nummiss <- length(missing)
+```
+The total number of observations with missing value is `r nummiss`.
+
+## Strategy for determining missing value
+```{r misstr}
+missingdata <- activitytidydata[which(is.na(activitytidydata$steps)),]
+filleddata <- activitytidydata[which(!is.na(activitytidydata$steps)),]
+ 
+for ( j in 1:nrow(missingdata)){ missingdata[j,1] <- intervals[intervals$interval==missingdata[j,3],2]}
+allactivitydata <- rbind(filleddata,missingdata)
+```
+## Structure and summary of the new data file with missing values replaced by average value
+note: no indication of missing value in the structure or summary
+```{r newdat}
+ str(allactivitydata)
+
+ summary(allactivitydata)
+```
+
+## Determine the total number of steps taken per day with the imputed missing values
+```{r allsteps}
+alltotalsteps <- allactivitydata %>% filter(!is.na(steps)) %>% group_by(date) %>% summarize(steps = sum(steps)) %>% print
+```
+
+## Histogram of the frequency of various step bands updated with imputed values
+Distribution of step bands, along with the average and median number of steps per day 
+```{r allband}
+hist(alltotalsteps$steps, main = "Distribution of Total Steps per Day", xlab = "Categories of Steps Bands", ylab = "Frequency of Step Band", col = "green")
+allavgstep <- round(mean(alltotalsteps$steps, na.rm = T),0)
+allmedianstep <- round(median(alltotalsteps$steps, na.rm = T),0)
+```
+The average number of steps per day is `r allavgstep` and the median number of steps per day is `r allmedianstep`.
+
+## Difference in activity patterns during the week versus the weekend
+```{r diffpat}
+allactivitydata$day <- weekdays(allactivitydata$date, abbreviate = T) 
+allactivitydata$fac <- as.factor(ifelse(allactivitydata$day %in% c("Sat","Sun"), "Weekend","Weekday"))
+library(lattice)
+intervals <- allactivitydata %>% group_by(interval,fac) %>% summarize(steps = round(mean(steps),0)) %>% print 
+xyplot(steps~interval|fac, data=intervals, type = "l", layout=c(1,2), main = "Avereage Steps per Inverval for Weekday versus weekend", xlab = "Intervals", ylab = "Average Number of Steps")
+```
